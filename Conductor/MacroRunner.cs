@@ -16,12 +16,15 @@ namespace Conductor
     {
         public string CurrentMacro;
         public Socket MRSocket = null;
+        string response = "";
         StreamReader fs = null;
         NetworkStream ns = null;
         ConductorController controller = null;
         UInt16 m_crc;
         ConductorController rc;
-
+        SemaphoreSlim waitForResponse = new SemaphoreSlim( 0 );
+        string waitTarget = null;
+        private readonly log4net.ILog _logger = log4net.LogManager.GetLogger( typeof( MacroRunner ) );
         public MacroRunner( ConductorController sc, string filename )
         {
             CurrentMacro = filename;
@@ -129,6 +132,61 @@ namespace Conductor
             while ((line = readLine()) != null)
             {
                 Thread.Yield();
+                if (line.StartsWith( "IFRETURNISNOT" )) //conditional execution based on last return
+                {
+                    string value = "";
+                    string[] line1 = line.Split( '#' ); //Disregard comments
+                    string[] parsedLine = line1[0].Split( ',' );
+                    if (string.IsNullOrWhiteSpace( parsedLine[0] )) //Disregard blanks lines
+                        continue;
+                    if (parsedLine[1] != null)
+                        value = parsedLine[1]; //isolate target value
+
+                    if (value == response) //last return matches value
+                        continue; //do nothing, go to read next command
+                    //value is not equal to last response, execute conditional command
+                    line = ""; //reassemble rest of conditional command
+                    for (int i = 2 ; i < parsedLine.Length ; i++)
+                    {
+                        line += parsedLine[i];
+                        if (i < parsedLine.Length - 1) line += ",";
+                    }
+                    //continue execution as if it was non-conditional
+                }
+                if (line.StartsWith( "IFRETURNIS" )) //conditional execution based on last return
+                {
+                    string value = "";
+                    string[] line1 = line.Split( '#' ); //Disregard comments
+                    string[] parsedLine = line1[0].Split( ',' );
+                    if (string.IsNullOrWhiteSpace( parsedLine[0] )) //Disregard blanks lines
+                        continue;
+                    if (parsedLine[1] != null)
+                        value = parsedLine[1]; //isolate target value
+
+                    if (value != response) //last return does not match value
+                        continue; //do nothing, go to read next command
+                    //value is equal to last response
+                    line = ""; //reassemble rest of command
+                    for (int i = 2 ; i < parsedLine.Length ; i++)
+                    {
+                        line += parsedLine[i];
+                        if (i < parsedLine.Length - 1) line += ",";
+                    }
+                    //coninue execution as if it was non-conditional
+                }
+                if (line.StartsWith( "LOGERROR" )) //write log entry
+                {
+                    string value = "";
+                    string[] line1 = line.Split( '#' ); //Disregard comments
+                    string[] parsedLine = line1[0].Split( ',' );
+                    if (string.IsNullOrWhiteSpace( parsedLine[0] )) //Disregard blanks lines
+                        continue;
+                    if (parsedLine[1] != null)
+                        value = parsedLine[1];
+
+                    _logger.Error( value );
+                    continue;
+                }
                 // "Nested" macro calling
                 if (line.StartsWith( "@" ))
                 {
@@ -167,6 +225,7 @@ namespace Conductor
                                     break;
                             }; 
                     }
+                    Thread.Yield();
                     continue;
                 }
                 // Pop up MessageBox
@@ -182,6 +241,7 @@ namespace Conductor
                         MessageBoxButtons buttons = MessageBoxButtons.YesNo;
                         DialogResult result;
                         result = MessageBox.Show( parsedLine[1], "Alert!", buttons );
+                        response = result.ToString();
                         continue;
                     }
                 }

@@ -102,6 +102,9 @@
     <Content Include="bin\Debug\partiture.txt" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="log4net">
+      <Version>2.0.15</Version>
+    </PackageReference>
     <PackageReference Include="System.Memory">
       <Version>4.5.5</Version>
     </PackageReference>

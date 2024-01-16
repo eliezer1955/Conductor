@@ -20,6 +20,8 @@ namespace Conductor
 {
     internal static class Program
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger( System.Reflection.MethodBase.GetCurrentMethod().DeclaringType );
+
 
 
         /// <summary>
@@ -28,6 +30,11 @@ namespace Conductor
 
         static void Main()
         {
+
+            var configFile = new FileInfo( Path.Combine( AppDomain.CurrentDomain.BaseDirectory, "log4net.config" ) );
+            log4net.Config.XmlConfigurator.Configure( configFile );
+            log.Info( "PumpValveDiag starting!" );
+
             // Waits here for the process to exit.
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault( false );
