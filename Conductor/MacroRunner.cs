@@ -25,11 +25,30 @@ namespace Conductor
         SemaphoreSlim waitForResponse = new SemaphoreSlim( 0 );
         string waitTarget = null;
         private readonly log4net.ILog _logger = log4net.LogManager.GetLogger( typeof( MacroRunner ) );
+        private string[] Macro;
+        private int currentline = 0;
+        private System.Collections.Generic.Dictionary<string, int> label = new System.Collections.Generic.Dictionary<string, int>();
+
         public MacroRunner( ConductorController sc, string filename )
         {
             CurrentMacro = filename;
             fs = new StreamReader( CurrentMacro );
             controller = sc;
+            int currentline = 0;
+            if (CurrentMacro != null)
+            {
+                //Load full macro into memory as array of strings
+                Macro = System.IO.File.ReadAllLines( CurrentMacro );
+                //Scan macro array for labels, record their line number in Dictionary
+                currentline = 0;
+                foreach (string line in Macro)
+                {
+                    string[] line1 = line.Split( '#' ); //Disregard comments
+                    if (line1[0].StartsWith( ":" ))
+                        label.Add( line1[0].Substring( 1 ).TrimEnd( '\r', '\n', ' ', '\t' ), currentline + 1 );
+                    ++currentline;
+                }
+            }
         }
         public MacroRunner( ConductorController sc, Socket socket )
         {
@@ -88,7 +107,7 @@ namespace Conductor
                 return line;
             }
             else
-                return fs.ReadLine();
+                return currentline >= Macro.Length ? null : Macro[currentline++];
         }
 
 
@@ -132,6 +151,7 @@ namespace Conductor
             while ((line = readLine()) != null)
             {
                 Thread.Yield();
+                if (line.StartsWith( ":" )) continue;
                 if (line.StartsWith( "IFRETURNISNOT" )) //conditional execution based on last return
                 {
                     string value = "";
@@ -187,6 +207,25 @@ namespace Conductor
                     _logger.Error( value );
                     continue;
                 }
+                if (line.StartsWith( "GOTO" ))
+                {
+                    string value = "";
+                    string[] line1 = line.Split( '#' ); //Disregard comments
+                    string[] parsedLine = line1[0].Split( ',' );
+                    if (string.IsNullOrWhiteSpace( parsedLine[0] )) //Disregard blanks lines
+                        continue;
+                    if (parsedLine[1] != null)
+                        value = parsedLine[1].TrimEnd( '\r', '\n', ' ', '\t' );
+                    if (!label.ContainsKey( value ))
+                        _logger.Error( "Unknown label " + value );
+                    else
+                    {
+
+                        currentline = label[value];
+                        continue;
+                    }
+
+                }
                 // "Nested" macro calling
                 if (line.StartsWith( "@" ))
                 {
@@ -207,7 +246,7 @@ namespace Conductor
                     Thread.Sleep( delay );
                     continue;
                 }
-                
+
                 // Wait until specified status is read back from component specified
                 // Message format is "WAIT,component,status"
                 if (line.StartsWith( "WAIT" ))
@@ -219,11 +258,11 @@ namespace Conductor
                     if (parsedLine[1] != null)
                     {
                         while (true)
-                            {
-                                var player = controller.orchestra[parsedLine[1]];
-                                if (player.lastResponse == parsedLine[2])
-                                    break;
-                            }; 
+                        {
+                            var player = controller.orchestra[parsedLine[1]];
+                            if (player.lastResponse == parsedLine[2])
+                                break;
+                        };
                     }
                     Thread.Yield();
                     continue;
@@ -273,7 +312,7 @@ namespace Conductor
                         continue;
                     }
                     musician target = controller.orchestra[lin3[0]];
-                    int startCommand = lin2[0].IndexOf( ":" )+1;
+                    int startCommand = lin2[0].IndexOf( ":" ) + 1;
                     string command = lin2[0].Substring( startCommand );
                     target.SendCommand( command );
                     controller.parent.updateStatus( lin3[0], command );
